@@ -75,7 +75,7 @@ if source_filename == "-" then
 	end
 else
 	local input = io.open( source_filename, "r" )
-	assert( input, "Could not open file for reading." )
+	assert( input, "Could not open file for reading: " .. source_filename )
 
 	for line in input:lines( ) do
 		 table.insert( lines, line )
@@ -102,7 +102,7 @@ local function open_stream( report )
 	filespec = string.gsub( filespec, "%%POST_DATE3%%", os.date( "%m-%d-%Y", report.post_created + timezone * 3600 ) )
 
 	output = io.open( filespec, "w" )
-	assert( output, "Could not open file for writing." )
+	assert( output, "Could not open file for writing: " .. filespec )
 
 	print = function ( str )
 		output:write( str .. "\n" )  -- override builtin print function
