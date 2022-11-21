@@ -1,0 +1,310 @@
+<html>
+<!--
+  RPAN Chat Archive Wizard v3.0
+  Copyright(c) 2022, Leslie E. Krause
+
+  Licensed under The MIT License.
+  https://opensource.org/licenses/MIT
+-->
+<head>
+<script>
+var cur_step = 0;
+var username;
+var subreddit;
+var filename_format;
+var search_results;
+
+function Spoiler( id, is_visible, callbacks )
+{
+	let elem = document.getElementById( id );
+	let tmpl = elem.innerHTML;
+
+	this.onEnter = callbacks.onEnter;
+	this.onLeave = callbacks.onLeave;
+
+	this.hide = function ( can_notify )
+	{
+		elem.style.display = 'none';
+	}
+
+	this.show = function ( )
+	{
+		elem.style.display = 'block';
+	}
+
+	this.format = function ( )
+	{
+		let regex = /%([-0])?([0-9]+)?(\.[0-9]+)?([sdf%])/g;
+		let args = arguments;
+		let idx = 0;
+
+		elem.innerHTML = tmpl.replace( regex, function ( exp, p0, p1, p2, p3 )
+		{
+			if( exp == '%%' )
+				return '%';
+			else if( idx >= args.length )
+				return 'undefined';
+
+			let type = p3;
+			let prec = p2 != undefined ? parseInt( p2.substr( 1 ) ) : 6;
+			let size = p1 != undefined ? parseInt( p1 ) : 0;
+			let fill = p0 == '0' && type != 's' ? '0' : ' ';
+			let is_sign = type != 's' && args[ idx ] < 0;
+			let is_left = p0 == '-';
+
+			let str;
+			switch( type ) {
+				case 's':
+					str = args[ idx ];
+					break;
+				case 'd':
+					str = parseFloat( args[ idx ] ).toFixed( 0 );
+					break;
+				case 'f':
+					str = parseFloat( args[ idx ] ).toFixed( prec );
+					break;
+			}
+			while( str.length < size ) {
+				str = is_left ? str + ' ' : fill + str;
+				if( fill == '0' && !is_left && is_sign )
+					str = '-0' + str.substr( 2 );  // fun corner case!
+			}
+
+			idx++;
+
+			return str;
+		} )
+	}
+
+	if( !is_visible ) {
+		this.hide( );
+	}
+
+	return this;
+}
+
+function getFilename( v )
+{
+	return v.stream_id + '.html';
+}
+
+function copyFilename( obj )
+{
+	let filename = obj.getAttribute( 'id' );
+	navigator.clipboard.writeText( filename );
+}
+
+function abortNavigation( )
+{
+	alert( 'Right-click link to save the page.' );
+}
+
+function nextStep( )
+{
+	if( cur_step < steps.length - 1 )
+	{
+		if( steps[ cur_step ].onLeave( ) )
+		{
+			steps[ cur_step ].hide( );
+			cur_step++;
+			steps[ cur_step ].onEnter( );
+			steps[ cur_step ].show( );
+			updateButtons( );
+		}
+	}
+}
+
+function prevStep( )
+{
+	if( cur_step > 0 )
+	{
+		steps[ cur_step ].hide( false );
+		cur_step--;
+		steps[ cur_step ].onEnter( );
+		steps[ cur_step ].show( );
+		updateButtons( );
+	}
+}
+
+function updateButtons( )
+{
+	document.getElementById( 'prev_button' ).disabled = ( cur_step == 0 );
+	document.getElementById( 'next_button' ).disabled = ( cur_step == steps.length - 1 );
+}
+</script>
+<title>RPAN Chat Archive Wizard</title>
+</head>
+
+<body><center>
+<h1>RPAN Chat Archive Wizard</h1>
+
+<table border="1" width="80%" cellpadding="10" cellspacing="0">
+<tr><td align="center" height="400">
+<form name="wizard">
+
+<div id="step1">
+	<p><b>Step 1.</b> Enter your Reddit username: <br>
+	<input type="text" name="username"></p>
+</div>
+
+<div id="step2">
+	<p><b>Step 2.</b> Select the RPAN subreddit: <br>
+	<select name="subreddit">
+	<option>r/AnimalsOnReddit</option>
+	<option>r/distantsocializing</option>
+	<option>r/GlamourSchool</option>
+	<option>r/HeadlineWorthy</option>
+	<option>r/readwithme</option>
+	<option>r/RedditInTheKitchen</option>
+	<option>r/RedditMasterClasses</option>
+	<option>r/RedditSessions</option>
+	<option>r/RedditSets</option>
+	<option>r/redditsweats</option>
+	<option>r/shortcircuit</option>
+	<option>r/talentShow</option>
+	<option>r/TheArtistStudio</option>
+	<option>r/TheGamerLounge</option>
+	<option>r/TheYouShow</option>
+	<option>r/whereintheworld</option>
+	</select></p>
+</div>
+
+<div id="step3">
+	<p><b>Step 3.</b> Go to the following page (it will open a new tab).<br>
+	<a href="https://old.reddit.com/%s/search?q=author%3A%s&restrict_sr=on&include_over_18=on&sort=new" target="_blank">https://old.reddit.com/%s/search?q=author%3A%s&restrict_sr=on&include_over_18=on&sort=new</a><br>
+</div>
+
+<div id="step4">
+	<p><b>Step 4.</b> Copy the search results into the box below:<br>
+	<textarea name="search_results" rows="10" cols="60"></textarea><br>
+	If there are multiple pages, then append each set of results with a newline.</p>
+</div>
+
+<div id="step5">
+	<p><b>Step 5.</b> Save each of the pages below with the given filename:</p>
+	<div>%s</div>
+</div>
+
+<div id="step6">
+	<p><b>Step 5.</b> Use the RPAN Chat Archive tool to export the chatlogs:<br>
+	<a href="https://github.com/sorcerykid/rpan_chat_archive" Target="_blank">https://github.com/sorcerykid/rpan_chat_archive</a></p>
+</div>
+
+</form>
+</td><tr>
+<tr><td align="center">
+	<input id="prev_button" type="button" value="Back" onClick="prevStep( );"></input>
+	<input id="next_button" type="button" value="Next" onClick="nextStep( );"></input>
+</td></tr>
+
+</table>
+
+<script>
+var steps = [
+	new Spoiler( 'step1', true, {
+		onEnter: function ( ) { },
+		onLeave: function ( ) {
+			let value = document.wizard.username.value.trim( );
+			if( !new RegExp( /^[a-zA-Z0-9_-]+$/ ).test( value ) ) {
+				alert( 'Invalid username' );
+				return false;
+			}
+			username = value;
+			return true;
+		},
+	} ),
+	new Spoiler( 'step2', false, {
+		onEnter: function ( ) { },
+		onLeave: function ( ) {
+			let value = document.wizard.subreddit.value;
+			subreddit = value;
+			return true;
+		},
+	} ),
+	new Spoiler( 'step3', false, {
+		onEnter: function ( ) {
+			this.format( subreddit, username, subreddit, username )
+		},
+		onLeave: function ( ) {
+			return true;
+		},
+	} ),
+	new Spoiler( 'step4', false, {
+		onEnter: function ( ) { },
+		onLeave: function ( ) {
+			let value = document.wizard.search_results.value;
+			let lines = value.split( /\r?\n/ );
+
+			search_results = [ ];
+
+			for( let i = 0; i < lines.length; i++ )
+			{
+				// Industrial Gothic Mondays (RPAN Shutdown Party)Broadcast
+				// 46 points 488 comments submitted 3 days ago by sorcerykid 2021 RPAN Halloween Winner to r/RedditSets
+				// https://www.reddit.com/rpan/r/RedditSets/yvkxh1
+
+				let res = lines[ i ].trim( ).match( /^(.+)Broadcast$/ );
+				if( res ) {
+					let post_title = res[ 1 ];
+
+					res = lines[ ++i ].trim( ).match( /^([0-9]+) points ([0-9]+) comments/ );
+					if( res == null ) {
+						alert( 'Cannot parse search results, line ' + ( i + 1 ) );
+						return false;
+					}
+					let post_points = res[ 1 ];
+					let post_comments = res[ 2 ];
+
+					res = lines[ ++i ].trim( ).match( /^https:\/\/.+\/(.+)$/ )
+					if( res == null ) {
+						alert( 'Cannot parse search results, line ' + ( i + 1 ) );
+						return false;
+					}
+					let stream_url = res[ 0 ];
+					let stream_id = res[ 1 ];
+
+					search_results.push( {
+						post_url: 'https://old.reddit.com/' + subreddit + '/' + stream_id,
+						post_title: post_title,
+						post_points: post_points,
+						post_comments: post_comments,
+						stream_url: stream_url,
+						stream_id: stream_id,
+					} )
+				}
+			}
+
+			return search_results.length > 0;
+		},
+	} ),
+	new Spoiler( 'step5', false, {
+		onEnter: function ( ) {
+			let str = '<table border="1" width="80%">';
+			str += '<tr><th width="5%">#</th><th width="70%" align="left">Post URL</th><th colspan="2" width="25%">Filename</th></tr>';
+			for( i = 0; i < search_results.length; i++ )
+			{
+				let v = search_results[ i ];
+				let filename = getFilename( v );
+				str += '<tr><td align="center">' + ( i + 1 ) + '</td>';
+				str += '<td><a href="' + v.post_url + '?sort=old&limit=500" target="_blank" onClick="abortNavigation( ); return false;">' + v.post_url + '</a></td>';
+				str += '<td align="center"><nobr><code><a href="#" id="' + filename + '" onClick="copyFilename( this );">' + filename + '</a></code></nobr></td></tr>';
+			}
+			str += '</table>';
+			this.format( str );
+		},
+		onLeave: function ( ) {
+			return true;
+		},
+	} ),
+	new Spoiler( 'step6', false, {
+		onEnter: function ( ) { },
+		onLeave: function ( ) {	},
+	} ),
+
+];
+
+updateButtons( );
+</script>
+
+</center></body>
+</html>

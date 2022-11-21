@@ -5,15 +5,68 @@
 -- Copyright (c) 2022, Leslie E. Krause
 -----------------------------------------------------
 
-local users = { }
-local chat_list = { }
-local gold_list = { }
+local users
+local chat_list
+local gold_list
+local subreddit
+local post_url
+local post_title
+local post_created
+local post_author
+local post_points
+local stream_id
+local stream_url
 
 ---------------------
 -- Private Methods --
 ---------------------
 
-local function no_op ( ) end
+local _C = { }
+
+local function is_match( text, pattern )
+        local res = { string.match( text, pattern ) }
+        setmetatable( _C, { __index = res } )
+        return #res > 0
+end
+
+local function insert_chat( author, created, message, is_gold, leaf_id, tree_id )
+	table.insert( chat_list, { author = author, created = created, message = message, is_gold = is_gold, leaf_id = leaf_id, tree_id = tree_id } )
+	if not users[ author ] then
+		users[ author ] = { gold_count = 0, chat_count = 1 }
+	else
+		users[ author ].chat_count = users[ author ].chat_count + 1
+	end
+end
+
+local function insert_gold( sender, award )
+	table.insert( gold_list, { sender = sender, award = award } )
+	if not users[ sender ] then
+		users[ sender ] = { gold_count = 1, chat_count = 0 }
+	else
+		users[ sender ].gold_count = users[ sender ].gold_count + 1
+	end
+end
+
+local function to_timestamp( str )
+	-- convert from 2016-08-13T17:27:06.886Z
+	assert( is_match( str, "^(%d%d%d%d)%-(%d%d)%-(%d%d)T(%d%d):(%d%d):(%d%d)" ) )
+	return os.time( {
+		year = tonumber( _C[ 1 ] ),
+		month = tonumber( _C[ 2 ] ),
+		day = tonumber( _C[ 3 ] ),
+		hour = tonumber( _C[ 4 ] ),
+		min = tonumber( _C[ 5 ] ),
+		sec = tonumber( _C[ 6 ] ),
+	} )
+end
+
+local function from_timestamp( timestamp )
+	return os.date( "%c UTC", timestamp )
+end
+
+--------------------
+-- Public Methods --
+--------------------
 
 local function splitlines( str, has_blanks )
 	res = { }
@@ -31,121 +84,118 @@ local function splitlines( str, has_blanks )
 	return res
 end
 
-local function insert_chat( user, chat )
-	table.insert( chat_list, { user = user, chat = chat, is_gold = false } )
-	if not users[ user ] then
-		users[ user ] = { gold_count = 0, chat_count = 1 }
-	else
-		users[ user ].chat_count = users[ user ].chat_count + 1
-	end
-end
+local function parse_chatlog( lines, is_debug )
+	local print = is_debug and print or function ( ) end
+	local idx = 2
 
-local function insert_gold( user, gold )
-	table.insert( gold_list, { user = user, gold = gold } )
-	table.insert( chat_list, { user = user, chat = gold, is_gold = true } )
-	if not users[ user ] then
-		users[ user ] = { gold_count = 1, chat_count = 0 }
-	else
-		users[ user ].gold_count = users[ user ].gold_count + 1
-	end
-end
+	assert( is_match( lines[ 1 ], '<link rel="canonical" href="(.-)"' ) )
+	post_url = string.gsub( _C[ 1 ], "//www%.", "//old." )
 
---------------------
--- Public Methods --
---------------------
+	assert( is_match( lines[ 1 ], '<time datetime="(.-)"' ) )
+	post_created = to_timestamp( _C[ 1 ] )
+
+	assert( is_match( lines[ 1 ], '<meta property="og:title" content="(.-)"' ) )
+	post_title = _C[ 1 ]
+
+	assert( is_match( lines[ 1 ], '<meta property="og:description" content="Posted in (.-) by (.-) • (.-) points? and (.-) comments?"' ) )
+	subreddit = _C[ 1 ]
+	post_author = _C[ 2 ]
+	post_points = tonumber( _C[ 3 ] )
+
+	assert( is_match( lines[ 1 ], '<link rel="shorturl" href="https://redd.it/(.-)"' ) )
+	stream_id = _C[ 1 ]
+	stream_url = string.format( "https://www.reddit.com/rpan/%s/%s", subreddit, _C[ 1 ] )
+
+	print( "meta-subreddit: " .. subreddit )
+	print( "meta-post-url: " .. post_url )
+	print( "meta-post-title: " .. post_title )
+	print( "meta-post-created: " .. from_timestamp( post_created ) )
+	print( "meta-post-author: " .. post_author )
+	print( "meta-post-points: " .. post_points )
+	print( "meta-stream-id: " .. stream_id )
+	print( "meta-stream-url: " .. stream_url )
+	print( "=====" )
+
+	while not string.find( lines[ idx ], '^</p><table class="md">' ) do
+		-- advance to first message
+		idx = idx + 1  
+	end
+
+	users = { }
+	chat_list = { }
+	gold_list = { }
+
+	while not string.find( lines[ idx ], '<script id="message%-report%-template"' ) do
+		local author = "[deleted]"
+		if is_match( lines[ idx ], 'data%-author="(.-)"' ) then
+			author = _C[ 1 ]
+		end
+
+		assert( is_match( lines[ idx ], 'datetime="(.-)"' ) )
+		local created = to_timestamp( _C[ 1 ] )
+
+		assert( is_match( lines[ idx ], 'data%-permalink=".-/(.......)/"' ) )
+		local leaf_id = _C[ 1 ]
+
+		assert( is_match( lines[ idx ], '<div class="md">(.+)' ) )
+		local message = _C[ 1 ]
+
+		idx = idx + 1
+		while not string.find( lines[ idx ], '^</div>$' ) do
+			-- message can span multiple lines
+			message = message .. " " .. lines[ idx ]
+			idx = idx + 1
+		end
+
+		local is_gold = false
+		if is_match( message, '^<p>Gave <strong>(.-)</strong>' ) then
+			insert_gold( author, _C[ 1 ] )
+			is_gold = true
+		end
+
+		idx = idx + 1
+		if string.find( lines[ idx ], '^</div><div class="usertext%-edit md%-container"' ) then
+			-- skip over message submission form
+			idx = idx + 2
+		end
+
+		print( "author: " .. author )
+		print( "created: " .. from_timestamp( created ) )
+		print( "message: " .. message )
+		print( "leaf_id: " .. leaf_id )
+
+		if is_match( lines[ idx ], '<a href="#(.-)" data%-event%-action="parent"' ) then
+			print( "tree_id: " .. _C[ 1 ] )
+			insert_chat( author, created, message, is_gold, leaf_id, _C[ 1 ] )
+		else
+			insert_chat( author, created, message, is_gold, leaf_id )
+		end
+
+		print( "=====" )
+	end
+
+	-- lastly sort by message creation
+	table.sort( chat_list, function ( a, b ) return a.created < b.created end )
+end
 
 local function get_report( )
-	return { users = users, chat_list = chat_list, gold_list = gold_list }
-end
-
-local function parse_newchat( lines, is_debug )
-	local print = is_debug and print or no_op
-	local idx = 1
-
-	-- skip to first message
-	while idx < #lines and not ( string.byte( lines[ idx ], 1 ) == 239 and string.byte( lines[ idx ], 2 ) == 191 ) do
-		idx = idx + 1
-	end
-
-	idx = idx + 1
-
-	while idx <= #lines do
-		local user = lines[ idx ]
-		print( "user: [" .. user .. "]" )
-		idx = idx + 1
-
-		if string.byte( lines[ idx ], 1 ) == 239 and string.byte( lines[ idx ], 2 ) == 191 then
-			local gold = string.sub( lines[ idx ], 9 )
-			print( "gold: [" .. gold .. "]" )
-			insert_gold( user, gold )
-			idx = idx + 3
-		else
-			local chat = lines[ idx ]
-			idx = idx + 2
-			while idx <= #lines and not ( string.byte( lines[ idx ], 1 ) == 239 and string.byte( lines[ idx ], 2 ) == 191 ) do
-				chat = chat .. " " .. lines[ idx ]
-				idx = idx + 2
-			end
-			print( "chat: [" .. chat .. "]" )
-			insert_chat( user, chat )
-			idx = idx + 1
-		end
-
-		print( "=====" )
-	end
-end
-
-local function parse_oldchat( lines, is_debug )
-	local print = is_debug and print or no_op
-	local idx = 1
-
-	while idx <= #lines do
-		-- print( lines[ idx ] )
-		local user = string.match( lines[ idx ], "^%[.-%]([a-zA-Z0-9_-]+)" ) or string.match( lines[ idx ], "^%[.-%](%[deleted%])" )
-		print( "user: [" .. user .. "]" )
-		idx = idx + 1
-
-		if user == "exclaim_bot" then
-			idx = idx + 2
-		end
-
-		if string.find( lines[ idx ], "^Gave " ) then
-			local gold = string.sub( lines[ idx ], 6 )
-			print( "gold: [" .. gold .. "]" )
-			insert_gold( user, gold )
-
-			if lines[ idx + 1 ] ~= "" then
-				idx = idx + 4
-			else
-				idx = idx + 3
-			end
-		else
-			local chat = lines[ idx ]
-			idx = idx + 2
-
-			while idx <= #lines and not string.match( lines[ idx ], "^permalink.+reply$" ) do
-				chat = chat .. " " .. lines[ idx ]
-				idx = idx + 2
-			end
-
-			print( "chat: [" .. chat .. "]" )
-			insert_chat( user, chat )
-			idx = idx + 1
-		end
-
-		if lines[ idx ] == "continue this thread" then
-			idx = idx + 2
-		else
-			idx = idx + 1
-		end
-
-		print( "=====" )
-	end
+	return { 
+		users = users,
+		chat_list = chat_list,
+		gold_list = gold_list,
+		subreddit = subreddit,
+		post_url = post_url,
+		post_title = post_title,
+		post_created = post_created,
+		post_author = post_author,
+		post_points = post_points,
+		stream_id = stream_id,
+		stream_url = stream_url,
+	}
 end
 
 return {
 	splitlines = splitlines,
 	get_report = get_report,
-	parse_newchat = parse_newchat,
-	parse_oldchat = parse_oldchat,
+	parse_chatlog = parse_chatlog,
 }

@@ -1,18 +1,22 @@
-RPAN Chat Archive v2.0
+RPAN Chat Archive v3.0
 By Leslie E. Krause
 
-RPAN Chat Archive parses the RPAN chatlog from Old Reddit and exports messages using a
-builtin template (e.g. HTML, JSON, Lua, etc.). The output can optionally include member 
-activity and award history with the default 'debug' template.
+RPAN Chat Archive parses the RPAN chatlog from Old Reddit and generates a report in the
+specified file format (e.g. txt, json, html, etc.). The report can optionally include
+member activity and award history with the default 'debug' format.
 
 The package consists of the following files:
 
   /rpan_chat_archive
   |- README.txt
   |- LICENSE.txt
+  |- /tools
+     |- chat_archive_wizard.html
+     |- convert.csh
+     |- convert.bat
   |- /bin
-  |  |- parse_chatlog (binary for Linux)
-  |  |- parse_chatlog.exe (binary for Windows)
+     |- parse_chatlog (binary for Linux)
+     |- parse_chatlog.exe (binary for Windows)
   |- /src
      |- parse_chatlog.lua
      |- main_win32.lua (wrapper script for Windows binary)
@@ -35,18 +39,31 @@ permissions for the standalone binary.
 
 To run the script directly:
 
-  % lua src/parse_chatlog.lua ~/rpan/31-Oct-2022.txt
+  % lua src/parse_chatlog.lua ~/rpan/yp9heq.html
 
 To run the standalone binary:
 
-  % bin/parse_chatlog ~/rpan/31-Oct-2022.txt
-  % cat ~/rpan/31-Oct-2022.txt | bin/parse_chatlog
+  % bin/parse_chatlog ~/rpan/yp9heq.html
+  % cat ~/rpan/yp9heq.html | bin/parse_chatlog
 
-The chat log must be supplied either as piped input or from a plain-text file, as shown.
-In most cases, the file name does not matter (e.g. stream date, stream ID, etc.), but in
-the case of the HTML template, it will determine the page title.
+For complete instructions and usage examples:
 
-Note: The chat log must be copied from old.reddit.com, excluding the header and footer 
-portions of the page, otherwise parsing will fail.
+  % bin/parse_chatlog --help
+  % bin/parse_chatlog --example
 
-For additional features, use the command-line option '--help'.
+The chatlog must be supplied either as piped input or from an HTML file, as shown above.
+
+To simplify the process of downloading the chatlogs from Old Reddit, a JavaScript-based 
+wizard is included in the 'tools' subdirectory. It can be opened in your web browser.
+
+For bulk conversions, a Windows batch file and a Linux shell script are both included in
+the 'tools' subdirectory. You can drag-and-drop the chatlogs in Windows Explorer and they 
+will be exported to the 'output' directory under the project.
+
+In Linux, simply pass the list of chatlogs to be converted:
+
+  % cd tools
+  % ./convert.csh ~/rpan/*.html
+
+You can change the variables at the head of the batch file and shell script to customize 
+the output filename, output filetype, and timezone offset as well.
