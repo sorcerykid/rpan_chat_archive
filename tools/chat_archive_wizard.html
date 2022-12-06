@@ -247,7 +247,7 @@ var steps = [
 				if( res ) {
 					let post_title = res[ 1 ];
 
-					res = lines[ ++i ].trim( ).match( /^([0-9]+) points ([0-9]+) comments/ );
+					res = lines[ ++i ].trim( ).match( /^([0-9,]+) points ([0-9,]+) comments?/ );
 					if( res == null ) {
 						alert( 'Cannot parse search results, line ' + ( i + 1 ) );
 						return false;
